@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("NIDA_DATABASE_URL")
+}
+
+model NidaProfile {
+  id           String   @id @default(uuid())
+  nationalId   String   @unique @map("national_id")
+  fullName     String   @map("full_name")
+  gender       String
+  dob          DateTime
+  placeOfBirth String   @map("place_of_birth")
+  nationality  String
+  fatherName   String   @map("father_name")
+  motherName   String   @map("mother_name")
+  address      String
+  province     String
+  district     String
+  phone        String?
+  email        String?  @unique
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("nida_profiles")
+}

@@ -1,0 +1,21 @@
+{
+  "name": "nida-service",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "migrate": "npx prisma migrate dev --schema=prisma/schema.prisma",
+    "generate": "npx prisma generate --schema=prisma/schema.prisma"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "prisma": "^6.0.0",
+    "@prisma/client": "^6.0.0",
+    "dotenv": "^16.0.3",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
