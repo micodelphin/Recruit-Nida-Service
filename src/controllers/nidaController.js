@@ -1,9 +1,41 @@
 const prisma = require('../config/db');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-/**
- * GET /api/nida/:nationalId
- * Fetch NIDA profile by national ID
- */
+// ── Multer setup ────────────────────────────────────────────
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '../uploads/photos');
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `nida_photo_${Date.now()}${ext}`);
+  },
+});
+
+const fileFilter = (req, file, cb) => {
+  const allowed = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+  if (allowed.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only JPEG, PNG, JPG and WEBP images are allowed.'), false);
+  }
+};
+
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 3 * 1024 * 1024 }, // 3MB max
+});
+
+// Export multer middleware for use in routes
+const uploadPhoto = upload.single('photo');
+
+// ── Controllers ─────────────────────────────────────────────
+
 const getNIDAProfile = async (req, res) => {
   try {
     const { nationalId } = req.params;
@@ -19,10 +51,18 @@ const getNIDAProfile = async (req, res) => {
       });
     }
 
+    // Build full photo URL if photo exists
+    const profileWithPhoto = {
+      ...profile,
+      photoUrl: profile.photoPath
+        ? `http://localhost:8001/uploads/photos/${path.basename(profile.photoPath)}`
+        : null,
+    };
+
     return res.status(200).json({
       success: true,
       message: 'NIDA profile fetched successfully.',
-      data: profile,
+      data: profileWithPhoto,
     });
   } catch (error) {
     console.error('Get NIDA profile error:', error);
@@ -33,11 +73,6 @@ const getNIDAProfile = async (req, res) => {
   }
 };
 
-/**
- * GET /api/nida/verify-email/:email
- * Fetch NIDA profile by email
- * Used by recruitment-backend to verify user on register
- */
 const getNIDAByEmail = async (req, res) => {
   try {
     const { email } = req.params;
@@ -53,9 +88,16 @@ const getNIDAByEmail = async (req, res) => {
       });
     }
 
+    const profileWithPhoto = {
+      ...profile,
+      photoUrl: profile.photoPath
+        ? `http://localhost:8001/uploads/photos/${path.basename(profile.photoPath)}`
+        : null,
+    };
+
     return res.status(200).json({
       success: true,
-      data: profile,
+      data: profileWithPhoto,
     });
   } catch (error) {
     console.error('Get NIDA by email error:', error);
@@ -66,26 +108,12 @@ const getNIDAByEmail = async (req, res) => {
   }
 };
 
-/**
- * POST /api/nida
- * Create a new NIDA profile
- */
 const createNIDAProfile = async (req, res) => {
   try {
     const {
-      nationalId,
-      fullName,
-      gender,
-      dob,
-      placeOfBirth,
-      nationality,
-      fatherName,
-      motherName,
-      address,
-      province,
-      district,
-      phone,
-      email,
+      nationalId, fullName, gender, dob, placeOfBirth,
+      nationality, fatherName, motherName, address,
+      province, district, phone, email,
     } = req.body;
 
     const existing = await prisma.nidaProfile.findUnique({
@@ -114,6 +142,7 @@ const createNIDAProfile = async (req, res) => {
         district,
         phone: phone || null,
         email: email ? email.toLowerCase() : null,
+        photoPath: null,
       },
     });
 
@@ -131,19 +160,72 @@ const createNIDAProfile = async (req, res) => {
   }
 };
 
-/**
- * GET /api/nida
- * Get all NIDA profiles
- */
+// PATCH /api/nida/:nationalId/photo — upload or update photo for a profile
+const uploadNIDAPhoto = async (req, res) => {
+  try {
+    const { nationalId } = req.params;
+
+    const profile = await prisma.nidaProfile.findUnique({
+      where: { nationalId },
+    });
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'No NIDA profile found for this National ID.',
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No photo file provided.',
+      });
+    }
+
+    // Delete old photo from disk if it exists
+    if (profile.photoPath && fs.existsSync(profile.photoPath)) {
+      fs.unlinkSync(profile.photoPath);
+    }
+
+    // Save new photo path
+    await prisma.nidaProfile.update({
+      where: { nationalId },
+      data: { photoPath: req.file.path },
+    });
+
+    const photoUrl = `http://localhost:8001/uploads/photos/${req.file.filename}`;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Photo uploaded successfully.',
+      data: { photoUrl },
+    });
+  } catch (error) {
+    console.error('Upload NIDA photo error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error uploading photo.',
+    });
+  }
+};
+
 const getAllNIDAProfiles = async (req, res) => {
   try {
     const profiles = await prisma.nidaProfile.findMany({
       orderBy: { fullName: 'asc' },
     });
 
+    const profilesWithPhoto = profiles.map((p) => ({
+      ...p,
+      photoUrl: p.photoPath
+        ? `http://localhost:8001/uploads/photos/${path.basename(p.photoPath)}`
+        : null,
+    }));
+
     return res.status(200).json({
       success: true,
-      data: profiles,
+      data: profilesWithPhoto,
       meta: { total: profiles.length },
     });
   } catch (error) {
@@ -160,4 +242,6 @@ module.exports = {
   getNIDAByEmail,
   createNIDAProfile,
   getAllNIDAProfiles,
+  uploadNIDAPhoto,
+  uploadPhoto,
 };
